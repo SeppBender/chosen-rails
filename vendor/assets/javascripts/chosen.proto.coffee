@@ -193,7 +193,7 @@ class @Chosen extends AbstractChosen
       @search_choices.select("li.search-choice").invoke("remove")
     else
       this.single_set_selected_text()
-      if @disable_search or @form_field.options.length <= @disable_search_threshold
+      if @disable_search or @form_field.options.length <= @disable_search_threshold and not @create_option
         @search_field.readOnly = true
         @container.addClassName "chosen-container-single-nosearch"
       else
@@ -235,6 +235,9 @@ class @Chosen extends AbstractChosen
       @form_field.fire("chosen:maxselected", {chosen: this})
       return false
 
+    unless @is_multiple
+      @search_container.insert @search_field
+
     @container.addClassName "chosen-with-drop"
     @results_showing = true
 
@@ -250,6 +253,10 @@ class @Chosen extends AbstractChosen
   results_hide: ->
     if @results_showing
       this.result_clear_highlight()
+
+      unless @is_multiple
+        @selected_item.insert top: @search_field
+        @search_field.focus()
 
       @container.removeClassName "chosen-with-drop"
       @form_field.fire("chosen:hiding_dropdown", {chosen: this})
@@ -340,6 +347,11 @@ class @Chosen extends AbstractChosen
   result_select: (evt) ->
     if @result_highlight
       high = @result_highlight
+
+      if high.hasClassName "create-option"
+        this.select_create_option(@search_field.value)
+        return this.results_hide()
+
       this.result_clear_highlight()
 
       if @is_multiple and @max_selected_options <= this.choices_count()
@@ -358,6 +370,7 @@ class @Chosen extends AbstractChosen
 
       @form_field.options[item.options_index].selected = true
       @selected_option_count = null
+      @search_field.value = ""
 
       if @is_multiple
         this.choice_build item
@@ -365,11 +378,7 @@ class @Chosen extends AbstractChosen
         this.single_set_selected_text(this.choice_label(item))
 
       if @is_multiple && (!@hide_results_on_select || (evt.metaKey or evt.ctrlKey))
-        if evt.metaKey or evt.ctrlKey
-          this.winnow_results(skip_highlight: true)
-        else
-          @search_field.value = ""
-          this.winnow_results()
+        this.winnow_results()
       else
         this.results_hide()
         this.show_search_field_default()
@@ -435,15 +444,38 @@ class @Chosen extends AbstractChosen
     @search_results.insert this.get_no_results_html(terms)
     @form_field.fire("chosen:no_results", {chosen: this})
 
+  show_create_option: (terms) ->
+    create_option_html = this.get_create_option_html(terms)
+    @search_results.insert create_option_html
+    @search_results.down(".create-option").observe "click", (evt) => this.select_create_option(terms)
+
+  create_option_clear: ->
+    co = null
+    co.remove() while co = @search_results.down(".create-option")
+
+  select_create_option: ( terms ) ->
+    if Object.isFunction( @create_option )
+      @create_option.call this, terms
+    else
+      this.select_append_option( value: terms, text: terms )
+
+  select_append_option: (options) ->
+    @form_field.insert this.get_option_html(options)
+    Event.fire @form_field, "chosen:updated"
+    if typeof Event.simulate is 'function'
+      @form_field.simulate("change")
+      @search_field.simulate("focus")
+
   no_results_clear: ->
     nr = null
     nr.remove() while nr = @search_results.down(".no-results")
-
 
   keydown_arrow: ->
     if @results_showing and @result_highlight
       next_sib = @result_highlight.next('.active-result')
       this.result_do_highlight next_sib if next_sib
+    else if @results_showing and @create_option
+      this.result_do_highlight(@search_results.select('.create-option').first())
     else
       this.results_show()
 
